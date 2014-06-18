@@ -1,0 +1,173 @@
+<!--
+%\VignetteEngine{knitr}
+%\VignetteIndexEntry{Package Demo: hazus}
+-->
+
+```{r, echo = FALSE, message = FALSE}
+knitr::opts_chunk$set(
+  comment = "#>",
+  error = FALSE,
+  tidy = FALSE)
+```
+
+# Introduction to *hazus*
+
+This vignette first provides an overview of Damage Functions in USA Federal Emergency Management Agency (FEMA)'s [HAZUS][haz_ref] software followed by some examples on how to obtain and plot the flood-specific Damage Functions from HAZUS using the *hazus* package.
+
+The HAZUS software package contains models and data for estimating potential losses from natural disasters such as floods, earthquakes and hurricanes. Within HAZUS, Damage Functions, also known as Vulnerability Functions, are used to estimate financial losses to a building or a structure (and also its contents and inventory) for a given severity of the hazard. For instance, these DFs quantify the damage from hurricanes for a given wind speed, or the damage from flooding of a certain depth. Damage is typically specified as a percentage of the total value of the property. Several thousand DFs have been developed by HAZUS from claims data and engineering analyses and these serve as a benchmark in catastrophe modeling, both in academia and industry. 
+
+Some drawbacks of HAZUS DFs:
+
+* Not readily available for analysis and display. 
+* Some of them are buried as tables within Microsoft Access Databases, while some are only described in user and technical manuals.
+* Documentation is also scattered among user and technical manuals.
+* Format of these DFs is not readily suitable for visualization. 
+
+The goal of the *hazus* package is to address the above drawbacks. The *hazus* package comes with DFs and also appropriate documentation. Moreover, functionality is provided to analyze and visualize these DFs.
+
+
+# Using *hazus*
+
+After installing the package, load the package along with *reshape2* (for data extraction) and *ggplot2* for analysis and graphics.
+
+```{r, message = FALSE}
+library(hazus)
+library(reshape2)
+library(ggplot2)
+```
+
+*hazus* comes with a number of datasets on flood-specific DFs and also the function `extract_hazus_functions` to extract and subsequently visualize these DFs.
+
+```{r}
+data(haz_fl_dept) # depth-based DFs
+data(haz_fl_velo) # velocity and depth-based DFs
+data(haz_fl_agri) # agriculture DFs
+data(haz_fl_bridge) # DFs for bridges
+data(haz_fl_depr) # depreciation functions
+data(haz_fl_occ) # occupancy description table
+```
+
+These datasets could also be obtained using `extract_hazus_functions` by setting `long_format` argument to FALSE and the appropriate `func_type`value. As mentioned in the drawbacks above, the raw functions from HAZUS are not readily suitable for visualization.
+
+```{r}
+fl_dept <- extract_hazus_functions(long_format = FALSE)
+dim(fl_dept)
+```
+
+The default invocation of `extract_hazus_functions` fetches all the depth-based DFs in the "long" format.
+
+```{r}
+fl_dept <- extract_hazus_functions()
+dim(fl_dept)
+head(fl_dept)
+```
+
+The occupancy description table provides information on occupancy classes and sub-classes.
+
+```{r}
+head(haz_fl_occ)
+levels(as.factor(haz_fl_occ$Occupancy))
+table(haz_fl_occ$Occupy_Class)
+```
+
+Velocity-based DFs are only specified for 1 to 3 stories in the [HAZUS Technical Manual][tm_ref].
+
+```{r}
+fl_velo <- extract_hazus_functions(func_type = "velocity")
+str(fl_velo)
+```
+
+Agriculture DFs are based on the calendar day of the year.
+
+```{r}
+fl_agri <- extract_hazus_functions(func_type = "ag")
+str(fl_agri)
+```
+
+DFs for bridges are based on the return period of the flood.
+
+```{r}
+fl_bridge <- extract_hazus_functions(func_type = "bridge")
+str(fl_bridge)
+```
+
+Depreciation by age of a structure is based on occupancy type.
+
+```{r}
+fl_depr <- extract_hazus_functions(func_type = "deprec")
+str(fl_depr)
+```
+
+
+# Graphics
+
+Following are some graphics using the data obtained from the *hazus* package.
+
+Depth-based DFs for single-story building coverage.
+
+```{r}
+gfx_data <- subset(fl_dept, grepl("one floor", Description) & Cover_Class == "Bldg")
+
+# clean up description
+gfx_data$Description <- paste(gfx_data$DmgFnId, gfx_data$Description)
+
+gfx_line <- ggplot(data = gfx_data, aes(x = depth, y = damage))
+gfx_line <- gfx_line + geom_line(aes(colour = Description))
+gfx_line <- gfx_line + ylab("Damage (%)") + xlab("Flood Depth (ft)")
+
+print(gfx_line)
+```
+
+Velocity-based DFs for four structure types by number of stories.
+
+```{r}
+gfx_line <- ggplot(data = fl_velo, aes(x = vel, y = dep))
+gfx_line <- gfx_line + geom_line(aes(colour = num_story))
+gfx_line <- gfx_line + facet_wrap(~struc_type, scales = "fixed")
+gfx_line <- gfx_line + ylab("Flood Depth (ft)") + xlab("Flood Velocity (ft/s)")
+print(gfx_line)
+```
+
+Agriculture DFs for select crops.
+
+```{r}
+gfx_data <- subset(fl_agri, loss_type == "PctCropLoss" & Crop %in% 
+                     c("Tomato", "Cotton", "Wheat"))
+
+gfx_line <- ggplot(data = gfx_data, aes(x = JulianDay, y = damage))
+gfx_line <- gfx_line + geom_line(aes(colour = Crop))
+gfx_line <- gfx_line + ylab("Damage (fraction)") + xlab("Day of Year")
+print(gfx_line)
+```
+
+DFs for bridges.
+
+```{r}
+gfx_data <- fl_bridge
+gfx_data$Description <- paste(gfx_data$Occupancy, gfx_data$Description)
+
+gfx_line <- ggplot(data = gfx_data, aes(x = ret_period, y = damage))
+gfx_line <- gfx_line + geom_line(aes(colour = Description))
+gfx_line <- gfx_line + ylab("Damage (%)") + xlab("Flood Return Period (years)")
+print(gfx_line)
+```
+
+Depreciation functions for select occupancy types.
+
+```{r}
+gfx_data <- fl_depr[grepl("1", fl_depr$Occupancy), ]
+
+gfx_line <- ggplot(data = gfx_data, aes(x = Age, y = deprec))
+gfx_line <- gfx_line + geom_line(aes(colour = Occupancy))
+gfx_line <- gfx_line + ylab("Depreciation (%)") + xlab("Age (years)")
+print(gfx_line)
+```
+
+
+# Future Work
+
+Currently the *hazus* package has only flood-specific DFs. Hurricane and earthquake DFs would be included in the future. Also, a number of utilities of potential use in flood risk modeling and other catastrophe modeling are available from HAZUS. Such utilities could also be included in future versions of the *hazus* package.
+
+[haz_ref]: http://www.fema.gov/hazus/ "Hazus: The Federal Emergency Management Agency's (FEMA's) Methodology for Estimating Potential Losses from Disasters"
+[tm_ref]: http://www.fema.gov/protecting-our-communities/hazus/hazus-user-technical-manuals/ "HAZUS-MH MR4 Flood Model User Manual and Technical Manual, August 2009"
+

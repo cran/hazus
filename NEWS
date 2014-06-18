@@ -1,0 +1,4 @@
+Version 0.1, June 2014
+-----------
+
+*  Currently only flood-specific damage functions are included with the package. Damage functions for hurricane and earthquake would be included in the future. 
